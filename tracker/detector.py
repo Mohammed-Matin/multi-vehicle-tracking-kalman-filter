@@ -1,12 +1,23 @@
+import os
+
 from ultralytics import YOLO
 
 # COCO vehicle class ids
 VEHICLE_CLASSES = {2: "Car", 3: "Motorcycle", 5: "Bus", 7: "Truck"}
 
 
+def _resolve_model(path):
+    if os.path.isabs(path) or os.path.exists(path):
+        return path
+    cand = os.path.join(os.path.dirname(os.path.dirname(__file__)), path)
+    if os.path.exists(cand):
+        return cand
+    return path
+
+
 class VehicleDetector:
-    def __init__(self, model_path="yolov8n.pt", conf_thresh=0.4):
-        self.model = YOLO(model_path)
+    def __init__(self, model_path="models/yolov8n.pt", conf_thresh=0.4):
+        self.model = YOLO(_resolve_model(model_path))
         self.conf_thresh = conf_thresh
 
     def detect(self, frame):
