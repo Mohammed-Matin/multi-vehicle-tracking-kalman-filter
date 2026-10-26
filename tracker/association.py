@@ -29,7 +29,6 @@ class Track:
         self.time_since_update = 0
         self.history = [(int(cx), int(cy))]
         self.confirm_frames = confirm_frames
-        self.confirmed = self.hits >= confirm_frames
 
     @property
     def is_confirmed(self):
@@ -55,16 +54,18 @@ class Track:
         self.class_name = class_name
         self.hits += 1
         self.time_since_update = 0
-        self.confirmed = self.hits >= self.confirm_frames
 
 
 class MultiVehicleTracker:
     def __init__(self, max_age=20, mahal_thresh=9.49,
-                 confirm_frames=3, tentative_age=5):
+                 confirm_frames=3, tentative_age=5,
+                 iou_merge_thresh=0.5, iou_backstop_thresh=0.3):
         self.max_age = max_age
         self.mahal_thresh = mahal_thresh
         self.confirm_frames = confirm_frames
         self.tentative_age = tentative_age
+        self.iou_merge_thresh = iou_merge_thresh
+        self.iou_backstop_thresh = iou_backstop_thresh
         self.tracks = []
         self.next_id = 1
 
@@ -97,23 +98,60 @@ class MultiVehicleTracker:
         unmatched_t = [i for i in range(num_t) if i not in matched_t]
         unmatched_d = [i for i in range(num_d) if i not in matched_d]
 
-        # 2. New tracks from unmatched detections
+        # 2a. IoU backstop: unmatched detection overlapping an existing track
+        #       gets assigned to that track instead of spawning a new one.
+        newly_matched_d = []
+        for di in list(unmatched_d):
+            det_box = detections[di]["bbox"]
+            best_ti, best_iou = -1, 0.0
+            for ti in unmatched_t:
+                iou = compute_iou(self.tracks[ti].bbox, det_box)
+                if iou > best_iou:
+                    best_iou, best_ti = iou, ti
+            if best_ti >= 0 and best_iou >= self.iou_backstop_thresh:
+                self.tracks[best_ti].update(det_box, detections[di]["class"])
+                matched_t.append(best_ti)
+                newly_matched_d.append(di)
+                unmatched_t.remove(best_ti)
+
+        unmatched_d = [d for d in unmatched_d if d not in newly_matched_d]
+
+        # 2b. New tracks from remaining unmatched detections
         for di in unmatched_d:
             new_t = Track(self.next_id, detections[di]["bbox"],
                           detections[di]["class"], self.confirm_frames)
             self.tracks.append(new_t)
             self.next_id += 1
 
-        # 3. Age / delete
+        # 3. Merge overlapping tracks (kill newer/weaker duplicate)
         alive = []
         for ti, tr in enumerate(self.tracks):
             if tr.time_since_update == 0:
                 alive.append(tr)
                 continue
-            # tentative tracks die faster
             age_limit = self.tentative_age if not tr.is_confirmed else self.max_age
             if tr.time_since_update <= age_limit:
                 alive.append(tr)
-        self.tracks = alive
 
+        # Pairwise merge
+        final = []
+        used = set()
+        for i in range(len(alive)):
+            if i in used:
+                continue
+            ti = alive[i]
+            cluster = [ti]
+            for j in range(i + 1, len(alive)):
+                if j in used:
+                    continue
+                tj = alive[j]
+                if compute_iou(ti.bbox, tj.bbox) >= self.iou_merge_thresh:
+                    cluster.append(tj)
+                    used.add(j)
+            used.add(i)
+            # Keep oldest / most-confirmed / most-hits track in cluster
+            best = max(cluster, key=lambda t: (t.is_confirmed, t.hits, -t.track_id))
+            final.append(best)
+
+        self.tracks = final
         return self.tracks
