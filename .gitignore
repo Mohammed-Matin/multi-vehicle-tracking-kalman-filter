@@ -1,0 +1,6 @@
+models/*.pt
+output/*.mp4
+output/*.avi
+__pycache__/
+*.pyc
+.venv/
