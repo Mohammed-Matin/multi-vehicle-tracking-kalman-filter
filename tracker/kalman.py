@@ -55,3 +55,19 @@ class KalmanFilterTracker:
     @property
     def velocity(self):
         return float(self.kf.statePost[2, 0]), float(self.kf.statePost[3, 0])
+
+    def mahalanobis(self, meas_x, meas_y):
+        """Squared-distance (Mahalanobis) from predicted state to a measurement."""
+        H = self.kf.measurementMatrix
+        z = np.array([[np.float32(meas_x)], [np.float32(meas_y)]], dtype=np.float32)
+        pred_meas = H @ self.kf.statePre
+        residual = z - pred_meas
+        P = self.kf.errorCovPre
+        R = self.kf.measurementNoiseCov
+        S = H @ P @ H.T + R
+        try:
+            S_inv = np.linalg.inv(S)
+        except np.linalg.LinAlgError:
+            return float("inf")
+        d2 = float(residual.T @ S_inv @ residual)
+        return d2

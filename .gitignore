@@ -1,1 +1,7 @@
-models/*.ptnoutput/*.mp4noutput/*.avinsamples/*.mp4n__pycache__/n*.pycn.venv/n
+models/*.pt
+output/*.mp4
+output/*.avi
+samples/*.mp4
+__pycache__/
+*.pyc
+.venv/
